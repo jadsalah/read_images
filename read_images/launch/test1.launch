@@ -1,0 +1,6 @@
+<launch>
+<node pkg="read_images" name="read_centroids" type="read_centroids.py"/>
+<node pkg="read_images" name="lsdTest" type="lsdTest.py"/>
+
+
+</launch>
