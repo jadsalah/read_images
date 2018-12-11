@@ -11,37 +11,27 @@ class send_cmd:
 		self.pub = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
 		self.subscriber = rospy.Subscriber("/centroids",Float32, self.callback)
 
+	def mycommand(self,dat):
+		self.pub.publish(dat)
+
 	def callback(self,ros_data):
+		vel_msg = Twist()
+		r_cx = ros_data.data
+		Kp = 0.0005
+		err = 320 - r_cx
+		vel_msg.linear.x = 2
+		vel_msg.linear.y = 0
+		vel_msg.linear.z = 0
+		vel_msg.angular.x = 0
+		vel_msg.angular.y = 0
+		vel_msg.angular.z = Kp*err
+		self.mycommand(vel_msg)
 		print str(ros_data.data)
 
-	def listener(self):
-		rospy.Subscriber("/centroids", Float32, callback)
-		rospy.spin()
-
-
-
-"""
-
-def sendCmdVel(diff):
-	pub = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
-	rospy.init_node('cmd_vel_node', anonymous=True)
-
-
-def listener():
-	rospy.init_node('read_centroids', anonymous=True)
-	rospy.Subscriber("/centroids", Float32, callback)
-	rospy.spin()
-
-def callback(ros_data):
-	print str(ros_data.data)
-
-if __name__ == '__main__':
-	listener()
-"""
 
 def main(args):
 	sc = send_cmd()
-	rospy.init_node('send command', anonymous=True)
+	rospy.init_node('send_command', anonymous=True)
 	try:
 		rospy.spin()
 	except KeyboardInterrupt:
@@ -49,3 +39,4 @@ def main(args):
 		
 if __name__ == '__main__':
 	main(sys.argv)
+
