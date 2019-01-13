@@ -2,6 +2,7 @@
 """
 This node will read image from topic "/drone/front/compressed"
 detect the centroid and will publish the centorid to the topic /centroids
+Another Change will be done which is choosing specific lines to compute the avergae
 """
 import numpy as np
 import cv2
