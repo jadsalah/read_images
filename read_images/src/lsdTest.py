@@ -2,7 +2,6 @@
 """
 This node will read image from topic "/drone/front/compressed"
 detect the centroid and will publish the centorid to the topic /centroids
-Another Change will be done which is choosing specific lines to compute the avergae
 """
 import numpy as np
 import cv2
@@ -54,23 +53,33 @@ class image_convert:
 		self.mlines = lines
 		long_lines = np.empty((0,1,4),dtype=np.float32)
 		intersec = np.empty((0,2),dtype=np.float32)
-		length = 10
+		length = 20
 		av1 = 0
 		cnt1 = 0
 		av2 = 0
 		cnt2 = 0
 		alfa = 0.15
+		if lines is None:
+			return in_image,320,0
 		for line in lines:
 			for x1,y1,x2,y2 in line:
 				if(self.findLength(x1,x2,y1,y2) > length):
-					if(abs(x1-x2) > 5):
+					if(abs(x1-x2) > 7 and abs(y1-y2) > 3):
 						if(y1 > self.gcy or y2 > self.gcy):
 							if(x1 < self.gcx or x2 < self.gcx):
-								av1 = av1 + (y2 - y1)/(x2 - x1)
-								cnt1 = cnt1 + 1
+								tempSlope = (y2 - y1)/(x2 - x1)
+								tempB = y1 - tempSlope*x1
+								tempErr = abs(self.gcy - (tempSlope*self.gcx + tempB))
+								if(tempErr < 10):
+									av1 = av1 + (y2 - y1)/(x2 - x1)
+									cnt1 = cnt1 + 1
 							else:
-								av2 = av2 + (y2 - y1)/(x2 - x1)
-								cnt2 = cnt2 + 1
+								tempSlope = (y2 - y1)/(x2 - x1)
+								tempB = y1 - tempSlope*x1
+								tempErr = abs(self.gcy - (tempSlope*self.gcx + tempB))
+								if(tempErr < 10):
+									av2 = av2 + (y2 - y1)/(x2 - x1)
+									cnt2 = cnt2 + 1
 						for i in range(len(long_lines)):
 							res,x,y = self.findIntersec([x1,y1,x2,y2],long_lines[i][0])
 							if(res == 1):
@@ -89,29 +98,29 @@ class image_convert:
 		print "avRight :" +str(av2)
 		sDiff = av2 + av1
 		#Clustering
-		db = DBSCAN(eps=10, min_samples=2).fit(intersec)
-		db_labels = db.labels_
-		cx = 0
-		cy = 0
-		labels, counts = np.unique(db_labels[db_labels>=0], return_counts=True)
-		maxlabel = labels[np.argsort(-counts)[:1]]
-		if(maxlabel.size > 0):
-			for lab in range(len(db.labels_)):
-				if db.labels_[lab] == maxlabel[0]:
-					cx = cx + intersec[lab][0]
-					cy = cy + intersec[lab][1]
-			cx = cx/max(counts)
-			cy = cy/max(counts)
-			if(self.gcx != 0):
-				cx = self.gcx - alfa*(self.gcx - cx)
+		try :
+			db = DBSCAN(eps=8, min_samples=2).fit(intersec)
+			db_labels = db.labels_
+			cx = 0
+			cy = 0
+			labels, counts = np.unique(db_labels[db_labels>=0], return_counts=True)
+			maxlabel = labels[np.argsort(-counts)[:1]]
+			if(maxlabel.size > 0):
+				for lab in range(len(db.labels_)):
+					if db.labels_[lab] == maxlabel[0]:
+						cx = cx + intersec[lab][0]
+						cy = cy + intersec[lab][1]
+				cx = cx/max(counts)
+				cy = cy/max(counts)
+				if(self.gcx != 0):
+					cx = self.gcx - alfa*(self.gcx - cx)
+					self.gcx = cx
+					cx = self.gcx - alfa*(self.gcx - cx)
 				self.gcx = cx
-				cx = self.gcx - alfa*(self.gcx - cx)
-			self.gcx = cx
-			self.gcy = cy
-			try:
+				self.gcy = cy
 				cv2.circle(drawn_img,(int(cx),int(cy)),10,(0,255,0),-1)
-			except:
-				pass
+		except:
+			pass
 		
 		return drawn_img,cx,sDiff
 
