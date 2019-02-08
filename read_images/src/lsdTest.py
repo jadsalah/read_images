@@ -7,22 +7,30 @@ import numpy as np
 import cv2
 import rospy
 from sensor_msgs.msg import CompressedImage
+from sensor_msgs.msg import Image
 from std_msgs.msg import Float32
 from std_msgs.msg import String
 import sys
 from sklearn.cluster import DBSCAN
 from sklearn import metrics
 import math
+import thread
+from cv_bridge import CvBridge, CvBridgeError
 
 
 class image_convert:
 
 	def __init__(self):
 		self.pub = rospy.Publisher('/centroids', String, queue_size=1)
+		self.pubForBag = rospy.Publisher('/imgForBag/front/compressed', CompressedImage, queue_size=1)
 		self.subscriber = rospy.Subscriber("/drone/front/compressed",CompressedImage, self.callback)
 		self.lsd = cv2.createLineSegmentDetector(0)
 		self.gcx = 0
 		self.gcy = 0
+		self.length = 100
+		self.br = CvBridge()
+
+		 
 
 	def findLength(self,x1,x2,y1,y2):
 		return math.sqrt((x1-x2)**2 + (y1-y2)**2)
@@ -47,23 +55,25 @@ class image_convert:
 		else:
 			return 1,(b1-b2)/(a2-a1), (a2*b1-a1*b2)/(a2-a1)
 
-	def getVanishingPoint(self,in_image):
+	def getVanishingPoint(self,in_image): 
+
 		self.gray = cv2.cvtColor(in_image, cv2.COLOR_BGR2GRAY)
+
+		self.gray = cv2.resize(self.gray, (320,240), interpolation = cv2.INTER_AREA) 
 		lines = self.lsd.detect(self.gray)[0]
 		self.mlines = lines
 		long_lines = np.empty((0,1,4),dtype=np.float32)
 		intersec = np.empty((0,2),dtype=np.float32)
-		length = 20
 		av1 = 0
 		cnt1 = 0
 		av2 = 0
 		cnt2 = 0
 		alfa = 0.15
 		if lines is None:
-			return in_image,320,0
+			return self.gray,160,0
 		for line in lines:
 			for x1,y1,x2,y2 in line:
-				if(self.findLength(x1,x2,y1,y2) > length):
+				if(self.findLength(x1,x2,y1,y2) > self.length):
 					if(abs(x1-x2) > 7 and abs(y1-y2) > 3):
 						if(y1 > self.gcy or y2 > self.gcy):
 							if(x1 < self.gcx or x2 < self.gcx):
@@ -89,20 +99,23 @@ class image_convert:
 								except :
 									pass
 						long_lines = np.append(long_lines,[[[x1,y1,x2,y2]]],axis = 0)
+						if intersec.shape[0] > 80 and self.length < 100:
+							self.length = self.length + 5
+						if intersec.shape[0] < 10 and self.length > 50:
+							self.length = self.length - 5
 		drawn_img = self.lsd.drawSegments(self.gray,long_lines)
+
 		if(cnt1 > 1):
 			av1 = av1/cnt1
 		if(cnt2 > 1):
 			av2 = av2/cnt2
-		print "avLeft :" +str(av1)
-		print "avRight :" +str(av2)
 		sDiff = av2 + av1
+		cx = 0
+		cy = 0
 		#Clustering
 		try :
-			db = DBSCAN(eps=8, min_samples=2).fit(intersec)
+			db = DBSCAN(eps=10, min_samples=2).fit(intersec)
 			db_labels = db.labels_
-			cx = 0
-			cy = 0
 			labels, counts = np.unique(db_labels[db_labels>=0], return_counts=True)
 			maxlabel = labels[np.argsort(-counts)[:1]]
 			if(maxlabel.size > 0):
@@ -114,20 +127,17 @@ class image_convert:
 				cy = cy/max(counts)
 				if(self.gcx != 0):
 					cx = self.gcx - alfa*(self.gcx - cx)
-					self.gcx = cx
-					cx = self.gcx - alfa*(self.gcx - cx)
 				self.gcx = cx
 				self.gcy = cy
+				print "Point X at : " + str(self.gcx)
+				print "nb Points : "+ str(max(counts))
 				cv2.circle(drawn_img,(int(cx),int(cy)),10,(0,255,0),-1)
 		except:
 			pass
-		
 		return drawn_img,cx,sDiff
 
 	def sendCentroid(self,dat):
-		#rate = rospy.Rate(10) # 10hz
 		self.pub.publish(dat)
-		#rate.sleep()
 
 	def callback(self,ros_data):
 		msg = ""
@@ -138,12 +148,17 @@ class image_convert:
 		cv2.imshow('cv_img', image)
 		if not rospy.is_shutdown():
 			self.sendCentroid(msg)
+			print image.shape
+			cmprsmsg = self.br.cv2_to_compressed_imgmsg(image)
+			self.pubForBag.publish(cmprsmsg)
 		cv2.waitKey(10)
 
 
+
 def main(args):
-	ic = image_convert()
 	rospy.init_node('image_feature', anonymous=True)
+	ic = image_convert()
+
 	try:
 		rospy.spin()
 	except KeyboardInterrupt:
